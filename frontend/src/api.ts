@@ -1,6 +1,8 @@
 import { Direction, GameState } from './types';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || 'https://2048-game-backend-six.vercel.app'
+).replace(/\/$/, '');
 
 export async function createGame(): Promise<GameState> {
   const response = await fetch(`${API_BASE_URL}/game`, {
