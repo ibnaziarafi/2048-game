@@ -1,6 +1,50 @@
 import random
 from typing import List, Tuple, Dict, Any
 
+DIRECTIONS = ("left", "right", "up", "down")
+
+
+def _process_row(row: List[int]) -> Tuple[List[int], int]:
+    values = [x for x in row if x]
+    result: list[int] = []
+    score = 0
+    index = 0
+    while index < len(values):
+        if index + 1 < len(values) and values[index] == values[index + 1]:
+            merged = values[index] * 2
+            result.append(merged)
+            score += merged
+            index += 2
+        else:
+            result.append(values[index])
+            index += 1
+    return result + [0] * (4 - len(result)), score
+
+
+def slide(board: List[List[int]], direction: str) -> Tuple[List[List[int]], int]:
+    """Calculate a deterministic slide without mutating the supplied board."""
+    if direction not in DIRECTIONS:
+        raise ValueError(f"Invalid direction: {direction}")
+    work = [row[:] for row in board]
+    if direction in ("up", "down"):
+        work = [[board[r][c] for r in range(4)] for c in range(4)]
+    if direction in ("right", "down"):
+        work = [row[::-1] for row in work]
+    output, score = [], 0
+    for row in work:
+        merged, points = _process_row(row)
+        output.append(merged)
+        score += points
+    if direction in ("right", "down"):
+        output = [row[::-1] for row in output]
+    if direction in ("up", "down"):
+        output = [[output[r][c] for r in range(4)] for c in range(4)]
+    return output, score
+
+
+def legal_moves(board: List[List[int]]) -> list[str]:
+    return [direction for direction in DIRECTIONS if slide(board, direction)[0] != board]
+
 
 class Game:
     """
@@ -47,32 +91,7 @@ class Game:
         3. Pad zeroes to length 4
         Returns (processed_row, score_gained).
         """
-        # Step 1: Remove zeroes
-        non_zeros = [x for x in row if x != 0]
-
-        # Step 2: Merge adjacent equal tiles
-        merged = []
-        score_gained = 0
-        skip = False
-
-        for i in range(len(non_zeros)):
-            if skip:
-                skip = False
-                continue
-
-            if i + 1 < len(non_zeros) and non_zeros[i] == non_zeros[i + 1]:
-                val = non_zeros[i] * 2
-                merged.append(val)
-                score_gained += val
-                skip = True
-            else:
-                merged.append(non_zeros[i])
-
-        # Step 3: Add zeroes back to maintain 4 elements
-        while len(merged) < 4:
-            merged.append(0)
-
-        return merged, score_gained
+        return _process_row(row)
 
     @staticmethod
     def _transpose(matrix: List[List[int]]) -> List[List[int]]:
@@ -89,49 +108,7 @@ class Game:
         Calculates the new board state and score gained for a direction
         without mutating self.board directly.
         """
-        direction = direction.lower()
-        working_board = [row[:] for row in self.board]
-        total_score_gained = 0
-
-        if direction == "left":
-            processed_board = []
-            for row in working_board:
-                new_row, pts = self._process_row(row)
-                processed_board.append(new_row)
-                total_score_gained += pts
-            return processed_board, total_score_gained
-
-        elif direction == "right":
-            reversed_board = self._reverse_rows(working_board)
-            processed_board = []
-            for row in reversed_board:
-                new_row, pts = self._process_row(row)
-                processed_board.append(new_row)
-                total_score_gained += pts
-            return self._reverse_rows(processed_board), total_score_gained
-
-        elif direction == "up":
-            transposed = self._transpose(working_board)
-            processed_board = []
-            for row in transposed:
-                new_row, pts = self._process_row(row)
-                processed_board.append(new_row)
-                total_score_gained += pts
-            return self._transpose(processed_board), total_score_gained
-
-        elif direction == "down":
-            transposed = self._transpose(working_board)
-            reversed_board = self._reverse_rows(transposed)
-            processed_board = []
-            for row in reversed_board:
-                new_row, pts = self._process_row(row)
-                processed_board.append(new_row)
-                total_score_gained += pts
-            unreversed = self._reverse_rows(processed_board)
-            return self._transpose(unreversed), total_score_gained
-
-        else:
-            raise ValueError(f"Invalid direction: {direction}")
+        return slide(self.board, direction.lower())
 
     def move(self, direction: str) -> bool:
         """
@@ -204,3 +181,4 @@ class Game:
             "score": self.score,
             "game_over": self.game_over,
         }
+
