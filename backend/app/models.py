@@ -1,14 +1,20 @@
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 
-class MoveRequest(BaseModel):
-    direction: str = Field(..., description="Move direction: left, right, up, or down")
-    game_id: Optional[str] = Field(None, description="Optional game session ID")
+class StrictRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
-class GameStateResponse(BaseModel):
-    game_id: str
-    board: List[List[int]]
-    score: int
-    game_over: bool
+class CreateGameRequest(StrictRequest):
+    request_id: UUID
+
+
+class MoveRequest(StrictRequest):
+    game_id: UUID
+    direction: Literal["left", "right", "up", "down"]
+    expected_revision: StrictInt = Field(ge=0)
+    request_id: UUID
+    source: Literal["human", "ai"]
