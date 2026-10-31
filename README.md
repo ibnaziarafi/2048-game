@@ -2,7 +2,7 @@
 
 FastAPI game engine and React/TypeScript frontend. This version serializes rapid inputs, uses atomic persistent game updates, and learns one shared value model from unassisted player moves. Hints and autoplay use that model.
 
-**Online launch is owner-authorized and deployment setup is in progress.** The dedicated Supabase project and private tables are ready; Vercel environment configuration and hosted smoke checks remain before the live service can be verified. SQLite is for local development; Vercel requires a persistent Postgres `DATABASE_URL` and private `GAME_DB_SCHEMA`, and fails closed rather than using temporary storage.
+**Online launch is owner-authorized and deployment setup is in progress.** The dedicated Supabase project, private tables and server-only RPC are ready; Vercel environment configuration and hosted smoke checks remain before the live service can be verified. SQLite is for local development. The preferred hosted adapter uses the Supabase HTTPS RPC with backend-only `SUPABASE_URL` and `SUPABASE_SECRET_KEY`; an optional direct Postgres adapter uses `DATABASE_URL` and private `GAME_DB_SCHEMA`. Vercel never falls back to SQLite.
 
 ## What changes
 
@@ -43,7 +43,7 @@ To point a separately hosted frontend at the backend, set `VITE_API_BASE_URL` to
 
 GitHub is connected to Vercel for automatic deployments. Use two Vercel projects pointed at the product repository: backend Root Directory `backend`, frontend Root Directory `frontend`. The frontend is a Vite build. Vercel production builds follow the configured production branch; Git branches create Vercel previews. The existing Azure workflow remains historical. Follow [deployment guide](docs/DEPLOYMENT.md) for environment setup, private Supabase schema verification, smoke acceptance, and rollback.
 
-For the Vercel **Frontend** project, set only `VITE_API_BASE_URL` to the actual backend deployment origin for the corresponding Vercel environment. Do not add Supabase URLs/keys or any database credentials to frontend variables. The backend project alone receives server-side `DATABASE_URL`, `GAME_DB_SCHEMA=game2048`, and exact `CORS_ORIGINS`. Keep the transaction-pooler URL private in Vercel encrypted environment settings.
+For the Vercel **Frontend** project, set only `VITE_API_BASE_URL` to the actual backend deployment origin for the corresponding Vercel environment. Do not add Supabase URLs/keys or any database credentials to frontend variables. The backend project alone receives `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, and exact `CORS_ORIGINS`. Keep the modern secret key in Vercel's encrypted server environment; it is sent only in the `apikey` header. The backend accepts a legacy `service_role` JWT during key migration. Do not set both Supabase variables partially. If they are both present, they take precedence over any leftover direct PostgreSQL `DATABASE_URL`.
 
 Online launch has been authorized, but no live service is claimed until the database schema, Vercel environments, automatic deployment and hosted smoke checks are complete. The old process-memory sessions cannot be recovered after upgrading; players start a new game.
 
