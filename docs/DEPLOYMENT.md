@@ -23,7 +23,7 @@ Set the following in the Vercel **Backend** project, Production environment:
 
 - `DATABASE_URL` — the copied Supabase transaction-pooler URL with TLS required. Server-side only.
 - `GAME_DB_SCHEMA` — `game2048`.
-- `CORS_ORIGINS` — the exact production frontend origin, scheme and hostname only, with no trailing slash or wildcard.
+- `CORS_ORIGINS` — `https://2048.rafistacks.dev` for the current production frontend, with no trailing slash.
 
 Set the following in the Vercel **Frontend** project, Production environment:
 
@@ -64,3 +64,11 @@ If database restore is required, restore the complete schema/database backup wit
 Supabase migrations `bootstrap_private_game2048` and `restrict_default_rls_helper_api_access` were applied to project `lywyqgebmqdirkwvivus`. All five tables are owned by `postgres` with RLS enabled; API roles have no schema usage or table grants. The public Data API rejected `Accept-Profile: game2048` with HTTP406/PGRST106. Model version/training count begin at zero; local player traces were not uploaded.
 
 Supabase advisors report no warnings/errors after restricting API execution of the pre-existing RLS event-trigger helper. Five informational [RLS-without-policy notices](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy) are expected: browser/API roles are denied, while the server-only owner connection bypasses RLS. This is not a reason to add public policies.
+
+## If the frontend loads but the game does not
+
+Set Production variables on the correct Vercel projects, then redeploy. The frontend build must use `VITE_API_BASE_URL=https://2048-game-backend-six.vercel.app`; setting it to `https://2048.rafistacks.dev` sends requests to the static frontend itself. Changing a variable does not modify a previously built JavaScript bundle.
+
+The backend `DATABASE_URL` must be a PostgreSQL connection string copied from Supabase **Connect → Transaction pooler**, not `https://lywyqgebmqdirkwvivus.supabase.co` (that is the HTTP API URL). Keep its real password private and preserve the copied pooler hostname, username and port; require `sslmode=require`. The backend also needs `GAME_DB_SCHEMA=game2048` and `CORS_ORIGINS=https://2048.rafistacks.dev`.
+
+Connection failures log `storage_connection_failed` with an allowlisted `reason_code`, safe exception class and SQLSTATE only. Examples: `auth_failure` for rejected credentials, `host_resolution`, `network_unreachable`, `network_timeout`, `tls_failure`, `invalid_dsn` or `missing_driver`. Logs omit connection strings, passwords and raw driver errors. Use the category to troubleshoot; do not send the complete connection secret in chat or public logs.
