@@ -82,12 +82,20 @@ class Store:
     @classmethod
     def from_environment(cls, environ=None):
         env = os.environ if environ is None else environ
+        has_supabase_url = "SUPABASE_URL" in env
+        has_supabase_key = "SUPABASE_SECRET_KEY" in env
+        if has_supabase_url or has_supabase_key:
+            if not has_supabase_url or not has_supabase_key or not env.get("SUPABASE_URL") or not env.get("SUPABASE_SECRET_KEY"):
+                raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY must both be configured; no storage fallback is used.")
+            from app.supabase_store import SupabaseStore
+            return SupabaseStore.from_environment(env)
         url = env.get("DATABASE_URL")
         schema = env.get("GAME_DB_SCHEMA")
         if url and url.strip().lower().startswith(("http://", "https://")):
             raise ValueError(
                 "DATABASE_URL must be a PostgreSQL connection string. "
-                "For Supabase, use Connect > Transaction pooler; do not use the HTTP Project URL."
+                "For Supabase HTTP storage, set SUPABASE_URL and SUPABASE_SECRET_KEY. "
+                "For direct PostgreSQL, use Supabase Connect > Transaction pooler."
             )
         if schema is not None:
             if (not SCHEMA_NAME.fullmatch(schema)
