@@ -1,96 +1,107 @@
-import uuid
-from typing import Dict, Optional
-from fastapi import FastAPI, HTTPException
+from __future__ import annotations
+
+import os
+from contextlib import asynccontextmanager
+from uuid import UUID
+
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from app.game import Game
-from app.models import MoveRequest, GameStateResponse
-
-app = FastAPI(title="2048 Game API", version="1.0.0")
-
-# Enable CORS for React frontend (Vite default port 5173 / any origin)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Simple in-memory game state store
-games: Dict[str, Game] = {}
-latest_game_id: Optional[str] = None
+from app.models import CreateGameRequest, MoveRequest
+from app.store import (GameNotFound, IdempotencyConflict, StaleRevision,
+                       Store, StoreBusy, StoreError)
 
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+def _store_from_config(config):
+    config = config or {}
+    if "store" in config:
+        return config["store"]
+    env = config.get("env")
+    if env is None:
+        return Store.from_environment()
+    return Store.from_environment(env)
 
 
-@app.post("/game", response_model=GameStateResponse)
-def create_game():
-    """Starts a new game of 2048."""
-    global latest_game_id
-    game_id = str(uuid.uuid4())
-    new_game = Game()
-    games[game_id] = new_game
-    latest_game_id = game_id
+def create_app(store=None, config=None):
+    config = dict(config or {})
+    configured_store = store or _store_from_config(config)
+    env = config.get("env", os.environ)
+    origins_setting = config.get("cors_origins", env.get("CORS_ORIGINS", "http://localhost:5173"))
+    origins = [origin.strip() for origin in origins_setting.split(",") if origin.strip()]
+    if "*" in origins:
+        raise ValueError("CORS_ORIGINS cannot use wildcard origins")
 
-    return GameStateResponse(
-        game_id=game_id,
-        board=new_game.board,
-        score=new_game.score,
-        game_over=new_game.game_over,
-    )
+    @asynccontextmanager
+    async def lifespan(_app):
+        configured_store.initialize()
+        yield
+
+    application = FastAPI(title="2048 Game API", version="2.0.0", lifespan=lifespan)
+    application.state.store = configured_store
+    application.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False,
+                               allow_methods=["GET", "POST", "OPTIONS"],
+                               allow_headers=["Content-Type"])
+
+    @application.middleware("http")
+    async def no_store(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @application.exception_handler(GameNotFound)
+    async def game_not_found(_request, _exc):
+        return JSONResponse(status_code=404, content={"detail": {"code": "game_not_found", "message": "Game not found; start a new game."}})
+
+    @application.exception_handler(IdempotencyConflict)
+    async def idempotency_conflict(_request, _exc):
+        return JSONResponse(status_code=409, content={"detail": {"code": "idempotency_conflict", "message": "Request ID was already used with different fields."}})
+
+    @application.exception_handler(StaleRevision)
+    async def stale_revision(_request, exc):
+        return JSONResponse(status_code=409, content={"detail": {"code": "stale_revision", "message": "Game changed; use the current state.", "state": exc.state}})
+
+    @application.exception_handler(StoreBusy)
+    async def storage_busy(_request, _exc):
+        return JSONResponse(status_code=503, headers={"Retry-After": "1"}, content={"detail": {"code": "storage_busy", "message": "Storage is busy; retry the same request."}})
+
+    @application.exception_handler(StoreError)
+    async def storage_unavailable(_request, _exc):
+        return JSONResponse(status_code=503, content={"detail": {"code": "storage_unavailable", "message": "Game storage is unavailable."}})
+
+    @application.get("/health")
+    def health_check():
+        configured_store.health()
+        return {"status": "ok"}
+
+    @application.post("/game")
+    def create_game(payload: CreateGameRequest):
+        return configured_store.create_game(payload.request_id)
+
+    @application.get("/game")
+    def get_game_without_path(game_id: UUID | None = Query(default=None)):
+        if game_id is None:
+            raise HTTPException(status_code=422, detail={"code": "game_id_required", "message": "Supply an explicit game_id."})
+        return configured_store.get_game(game_id)
+
+    @application.get("/game/{game_id}")
+    def get_game(game_id: UUID):
+        return configured_store.get_game(game_id)
+
+    @application.post("/game/move")
+    def make_move(payload: MoveRequest):
+        return configured_store.move(payload.game_id, payload.direction, payload.expected_revision,
+                                     payload.request_id, payload.source)
+
+    @application.get("/game/{game_id}/hint")
+    def get_hint(game_id: UUID):
+        return configured_store.get_hint(game_id)
+
+    @application.get("/ai/stats")
+    def get_stats():
+        return configured_store.stats()
+
+    return application
 
 
-@app.get("/game", response_model=GameStateResponse)
-@app.get("/game/{game_id}", response_model=GameStateResponse)
-def get_game(game_id: Optional[str] = None):
-    """Retrieves current state of a game."""
-    target_id = game_id or latest_game_id
-    if not target_id or target_id not in games:
-        raise HTTPException(status_code=404, detail="Game not found. Please start a new game.")
-
-    game = games[target_id]
-    return GameStateResponse(
-        game_id=target_id,
-        board=game.board,
-        score=game.score,
-        game_over=game.game_over,
-    )
-
-
-@app.post("/game/move", response_model=GameStateResponse)
-def make_move(request: MoveRequest):
-    """Executes a move in direction: 'left', 'right', 'up', or 'down'."""
-    target_id = request.game_id or latest_game_id
-    if not target_id or target_id not in games:
-        raise HTTPException(status_code=404, detail="Game not found. Please start a new game.")
-
-    direction = request.direction.lower().strip()
-    valid_directions = {"left", "right", "up", "down"}
-    if direction not in valid_directions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid direction '{request.direction}'. Must be one of: {', '.join(valid_directions)}"
-        )
-
-    game = games[target_id]
-    if game.game_over:
-        return GameStateResponse(
-            game_id=target_id,
-            board=game.board,
-            score=game.score,
-            game_over=True,
-        )
-
-    # Perform move (updates board, score, random tile, game_over if valid move)
-    game.move(direction)
-
-    return GameStateResponse(
-        game_id=target_id,
-        board=game.board,
-        score=game.score,
-        game_over=game.game_over,
-    )
+app = create_app()

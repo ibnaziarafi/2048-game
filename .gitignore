@@ -45,3 +45,17 @@ frontend/dist-ssr/
 .DS_Store
 Thumbs.db
 api-token.md
+
+# Local databases, player transitions and credentials
+.env
+.env.*
+!.env.example
+backend/data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+.vercel/
+

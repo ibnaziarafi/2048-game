@@ -31,6 +31,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  margin: auto;
 }
 
 /* Header */
@@ -127,6 +128,10 @@ body {
   justify-content: space-between;
   align-items: center;
 }
+
+.queue-notice, .pending-status { min-height: 1.1rem; font-size: 0.85rem; }
+.queue-notice { color: #721c24; font-weight: 700; }
+.pending-status { text-align: center; color: #8f7a66; }
 
 .retry-btn {
   background: #721c24;
@@ -271,6 +276,28 @@ body {
   background: #9f8b77;
 }
 
+.ai-panel {
+  border: 1px solid #ded6cc;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.ai-heading, .ai-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ai-heading h2 { font-size: 1.1rem; }
+.ai-heading span, .ai-panel p { font-size: 0.85rem; }
+.ai-panel p { line-height: 1.45; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stats-grid div { background: #eee4da; border-radius: 6px; padding: 9px; min-width: 0; }
+.stats-grid dt { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+.stats-grid dd { font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; margin-top: 3px; }
+.ai-btn { border: 0; border-radius: 6px; background: var(--primary-button); color: #fff; padding: 9px 12px; min-height: 42px; font: inherit; font-weight: 700; cursor: pointer; }
+.ai-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.ai-btn:focus-visible, .new-game-btn:focus-visible, .retry-btn:focus-visible, .dpad-btn:focus-visible { outline: 3px solid #edc22e; outline-offset: 2px; }
+.hint-copy { font-size: 0.9rem; }
+.stats-error { color: #721c24; }
+
 /* Footer / DSA info */
 .footer {
   text-align: center;
@@ -278,3 +305,23 @@ body {
   color: #a0978e;
   margin-top: 10px;
 }
+
+@media (max-width: 520px) {
+  body { padding: 12px; align-items: flex-start; }
+  .game-container { gap: 12px; max-width: 440px; }
+  .title-section h1 { font-size: 2.8rem; }
+  .title-section p, .instructions { font-size: 0.78rem; }
+  .score-box { min-width: 66px; padding: 7px 9px; }
+  .score-value { font-size: 1.15rem; }
+  .controls-bar { gap: 8px; }
+  .new-game-btn { padding: 10px 12px; font-size: 0.9rem; }
+  .board-container { padding: 8px; }
+  .grid { gap: 8px; }
+  .tile { font-size: clamp(1.15rem, 7vw, 2rem); }
+  .tile-128, .tile-256, .tile-512 { font-size: clamp(0.95rem, 5vw, 1.5rem); }
+  .tile-1024, .tile-2048, .tile-super { font-size: clamp(0.8rem, 4vw, 1.2rem); }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+
