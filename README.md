@@ -2,7 +2,7 @@
 
 FastAPI game engine and React/TypeScript frontend. This version serializes rapid inputs, uses atomic persistent game updates, and learns one shared value model from unassisted player moves. Hints and autoplay use that model.
 
-**Online activation needs a Postgres database. No database is configured yet.** SQLite is supported for local development; Vercel requires `DATABASE_URL` and never silently falls back to temporary storage.
+**Online launch is owner-authorized and setup is in progress.** The service is not live until the Vercel deployments and Supabase database are configured and smoke-verified. SQLite is for local development; Vercel requires a persistent Postgres `DATABASE_URL` and private `GAME_DB_SCHEMA`, and fails closed rather than using temporary storage.
 
 ## What changes
 
@@ -39,19 +39,13 @@ Open `http://localhost:5173`. The Vite `/api` development proxy reaches the back
 
 To point a separately hosted frontend at the backend, set `VITE_API_BASE_URL` to the backend origin **before building**. Never put database credentials in a `VITE_` variable: Vite embeds those values in public browser assets.
 
-## Keep Vercel for the backend
+## Vercel and Supabase deployment
 
-The existing repository uses an Azure static frontend workflow and a Vercel backend. They can remain separate.
+Use two Vercel projects connected to the same product repository: backend Root Directory `backend`, frontend Root Directory `frontend`. The frontend is a Vite static build. The existing Azure workflow remains historical; Vercel will host the chosen canonical frontend origin. Follow [LIVE-DEPLOYMENT.md](../docs/LIVE-DEPLOYMENT.md) for exact project settings, private Supabase schema/role setup, environment variables, smoke acceptance, and rollback.
 
-1. Configure a Postgres database and obtain its server connection URL. Prefer a provider-supported pooled endpoint for serverless use, with TLS as the provider requires. Provisioning, pricing and provider limits are owner decisions.
-2. In the Vercel backend project, set Root Directory to `backend`. Its supported FastAPI entrypoint is `app/main.py`; Python dependencies are in `requirements.txt`.
-3. Add `DATABASE_URL` as a **server-only** environment secret. Add `CORS_ORIGINS` as a comma-separated list of the actual frontend origins. Use separate preview and production databases so testing cannot change the production model.
-4. After deployment approval, deploy backend and run the Postgres integration/smoke checks. Missing storage configuration is an explicit failure, rather than a temporary in-memory game.
-5. Set the Azure frontend build environment `VITE_API_BASE_URL` to the configured backend origin, rebuild, and verify keyboard/swipe/reset/hint/autoplay against that deployment.
+Never put `DATABASE_URL` in frontend settings, a `VITE_` variable, source control, or a chat message. `VITE_API_BASE_URL` is public and contains only the backend origin. Keep the Supabase transaction-pooler URL and password in the Vercel backend project's encrypted server environment; redeploy after changing environment variables. The existing branch-specific deployment guard for `fix/rapid-moves-shared-ai` remains in place.
 
-There is no configured database or verified live deployment in this change. Never paste a connection URL into a GitHub issue or commit. Vercel's [FastAPI deployment documentation](https://vercel.com/docs/frameworks/backend/fastapi) describes the supported entrypoint and dependency setup.
-
-The old process-memory sessions cannot be recovered after upgrading; players start a new game. Draft PRs skip the existing Azure preview deployment job. The root and backend `vercel.json` disable Git deployments for `fix/rapid-moves-shared-ai` only, using Vercel's [branch deployment setting](https://vercel.com/docs/project-configuration/git-configuration). Other branches retain existing behavior. Merging or marking a PR ready requires the owner's release decision.
+Online launch has been authorized, but no live service is claimed until the account connection, database and Vercel setup complete and the deployed smoke checks pass. The old process-memory sessions cannot be recovered after upgrading; players start a new game.
 
 ## Data and recovery
 

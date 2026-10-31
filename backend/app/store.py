@@ -18,6 +18,11 @@ from app.learner import ALGORITHM, FEATURE_ORDER, INITIAL_WEIGHTS, hint as choos
 
 SCHEMA_VERSION = 1
 CREATE_SCOPE = "create"
+SCHEMA_NAME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]{0,62}")
+RESERVED_SCHEMAS = {
+    "public", "information_schema", "auth", "storage", "realtime", "extensions",
+    "vault", "graphql", "graphql_public", "supabase_functions", "supabase_migrations",
+}
 
 
 class StoreError(Exception):
@@ -60,7 +65,7 @@ class Store:
         self.database_url = database_url
         self.db_path = db_path
         self.failure_injector = failure_injector
-        if schema is not None and not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", schema):
+        if schema is not None and not SCHEMA_NAME.fullmatch(schema):
             raise ValueError("Invalid database schema name")
         self.schema = schema
         self.readonly = readonly
@@ -71,8 +76,18 @@ class Store:
     def from_environment(cls, environ=None):
         env = os.environ if environ is None else environ
         url = env.get("DATABASE_URL")
+        schema = env.get("GAME_DB_SCHEMA")
+        if schema is not None:
+            if (not SCHEMA_NAME.fullmatch(schema)
+                    or schema.lower() in RESERVED_SCHEMAS
+                    or schema.lower().startswith(("pg_", "supabase_"))):
+                raise ValueError("GAME_DB_SCHEMA must name a private application schema (1-63 ASCII identifier characters).")
+            if not url:
+                raise ValueError("GAME_DB_SCHEMA requires DATABASE_URL; it cannot configure local SQLite.")
         if url:
-            return cls(database_url=url)
+            if env.get("VERCEL") and schema is None:
+                raise RuntimeError("GAME_DB_SCHEMA must name a preprovisioned private PostgreSQL schema on Vercel.")
+            return cls(database_url=url, schema=schema)
         if env.get("VERCEL"):
             raise RuntimeError("DATABASE_URL must point to a persistent PostgreSQL database on Vercel; SQLite function storage is ephemeral.")
         return cls(db_path=env.get("GAME_DB_PATH", str(Path(__file__).resolve().parents[1] / "data" / "2048.sqlite3")))
