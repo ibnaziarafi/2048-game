@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import errno
+import logging
 import math
 import os
 import re
+import socket
+import ssl
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -23,6 +27,9 @@ RESERVED_SCHEMAS = {
     "public", "information_schema", "auth", "storage", "realtime", "extensions",
     "vault", "graphql", "graphql_public", "supabase_functions", "supabase_migrations",
 }
+logger = logging.getLogger(__name__)
+SQLSTATE_RE = re.compile(r"[0-9A-Z]{5}")
+SAFE_EXCEPTION_MODULES = {"psycopg", "socket", "ssl", "builtins"}
 
 
 class StoreError(Exception):
@@ -77,6 +84,11 @@ class Store:
         env = os.environ if environ is None else environ
         url = env.get("DATABASE_URL")
         schema = env.get("GAME_DB_SCHEMA")
+        if url and url.strip().lower().startswith(("http://", "https://")):
+            raise ValueError(
+                "DATABASE_URL must be a PostgreSQL connection string. "
+                "For Supabase, use Connect > Transaction pooler; do not use the HTTP Project URL."
+            )
         if schema is not None:
             if (not SCHEMA_NAME.fullmatch(schema)
                     or schema.lower() in RESERVED_SCHEMAS
@@ -118,7 +130,70 @@ class Store:
             connection.execute("PRAGMA busy_timeout = 5000")
             return connection
         except Exception as exc:
+            self._log_connection_failure(exc)
             self._raise_storage(exc)
+
+    @staticmethod
+    def _connection_failure_reason(exc) -> str:
+        """Map private driver details to a small, non-sensitive diagnostic enum."""
+        sqlstate = getattr(exc, "sqlstate", None)
+        exception_name = type(exc).__name__
+        message = str(exc).lower()
+
+        if sqlstate in {"28P01", "28000"} or exception_name in {
+            "InvalidPassword", "InvalidAuthorizationSpecification",
+        }:
+            return "auth_failure"
+        if isinstance(exc, ImportError) or exception_name in {"ModuleNotFoundError", "ImportError"}:
+            return "missing_driver"
+        if isinstance(exc, ssl.SSLError) or any(token in message for token in (
+            "ssl error", "tls error", "certificate verify", "certificate has expired",
+            "ssl connection", "tls handshake",
+        )):
+            return "tls_failure"
+        if isinstance(exc, socket.gaierror) or any(token in message for token in (
+            "could not translate host name", "name or service not known",
+            "nodename nor servname", "temporary failure in name resolution",
+            "no address associated with hostname",
+        )):
+            return "host_resolution"
+        if isinstance(exc, (TimeoutError, socket.timeout)) or getattr(exc, "errno", None) == errno.ETIMEDOUT or any(
+            token in message for token in ("connection timed out", "connect timeout", "timed out")
+        ):
+            return "network_timeout"
+        if getattr(exc, "errno", None) in {
+            errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ECONNREFUSED, errno.ECONNRESET,
+        } or any(token in message for token in (
+            "network is unreachable", "no route to host", "connection refused",
+            "connection reset by peer",
+        )):
+            return "network_unreachable"
+        if any(token in message for token in (
+            "invalid dsn", "invalid connection string", "invalid connection option",
+            "missing '=' after", "invalid uri query parameter",
+        )):
+            return "invalid_dsn"
+        return "unavailable"
+
+    @classmethod
+    def _log_connection_failure(cls, exc) -> None:
+        """Emit only allowlisted metadata; never attach the exception or its text."""
+        reason_code = cls._connection_failure_reason(exc)
+        raw_sqlstate = getattr(exc, "sqlstate", None)
+        sqlstate = raw_sqlstate if isinstance(raw_sqlstate, str) and SQLSTATE_RE.fullmatch(raw_sqlstate) else None
+        exception_type = type(exc)
+        module = exception_type.__module__
+        name = exception_type.__name__
+        exception_class = (
+            name if (module in SAFE_EXCEPTION_MODULES or module.startswith("psycopg."))
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,63}", name)
+            else None
+        )
+        # No exc_info: driver messages often contain the full DSN and credentials.
+        logger.error(
+            "storage_connection_failed reason_code=%s exception_class=%s sqlstate=%s",
+            reason_code, exception_class or "unknown", sqlstate or "unknown",
+        )
 
     def _raise_storage(self, exc):
         if isinstance(exc, sqlite3.OperationalError) and any(x in str(exc).lower() for x in ("locked", "busy")):
